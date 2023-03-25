@@ -1,3 +1,3 @@
 # Mail Go
 
-This package is created for supporting my work, if this package helps you then it is good.
+This package is created for supporting my work, I would be glad if the package can help you too.

@@ -2,43 +2,42 @@ package mail
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net/smtp"
 	"os"
-	"strings"
-	"time"
 )
 
-type mailOptions struct {
+type MailOptions struct {
 	Host     string
 	Port     string
 	Username string
 	Password string
 }
 
-func (m *mailOptions) plainAuth() smtp.Auth {
-	auth := smtp.PlainAuth("", m.Username, m.Password, m.Host)
+var ErrEmptyHost = errors.New("host is empty")
+var ErrEmptyPort = errors.New("port is empty")
+var ErrEmptyUsername = errors.New("username is empty")
+var ErrEmptyPassword = errors.New("password is empty")
 
-	return auth
-}
-
-// Send email to list of recipient with subject and body message
-func (m *mailOptions) sendMail(to []string, from, subject string) error {
-	var msgBuilder strings.Builder
-
-	msgBuilder.WriteString("From: " + from + "\r\n")
-	msgBuilder.WriteString("To: " + strings.Join(to, ",") + "\r\n")
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
-	msgBuilder.WriteString("Message-ID: " + generateMessageID() + "\r\n")
-	msgBuilder.WriteString("Date: " + time.Now().Format(time.RFC1123Z) + "\r\n")
-	msgBuilder.WriteString("\r\n\r\n")
-
-	err := smtp.SendMail(m.Host+":"+m.Port, m.plainAuth(), from, to, []byte(msgBuilder.String()))
-	if err != nil {
-		return err
+// Easiest way to get authentication for smtp server
+// See: https://golang.org/pkg/net/smtp/#PlainAuth
+func (m *MailOptions) plainAuth() (smtp.Auth, error) {
+	if m.Username == "" {
+		return nil, fmt.Errorf("mail options: %w", ErrEmptyUsername)
 	}
 
-	return nil
+	if m.Password == "" {
+		return nil, fmt.Errorf("mail options: %w", ErrEmptyPassword)
+	}
+
+	if m.Host == "" {
+		return nil, fmt.Errorf("mail options: %w", ErrEmptyHost)
+	}
+
+	auth := smtp.PlainAuth("", m.Username, m.Password, m.Host)
+
+	return auth, nil
 }
 
 // Message-ID in header email is consist of uuid and hostname
