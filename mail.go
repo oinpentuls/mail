@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-type MailOptions struct {
+type Options struct {
 	Host     string
 	Port     string
 	Username string
@@ -22,7 +22,7 @@ var ErrEmptyPassword = errors.New("password is empty")
 
 // Easiest way to get authentication for smtp server
 // See: https://golang.org/pkg/net/smtp/#PlainAuth
-func (m *MailOptions) plainAuth() (smtp.Auth, error) {
+func (m *Options) plainAuth() (smtp.Auth, error) {
 	if m.Username == "" {
 		return nil, fmt.Errorf("mail options: %w", ErrEmptyUsername)
 	}
@@ -41,7 +41,7 @@ func (m *MailOptions) plainAuth() (smtp.Auth, error) {
 }
 
 // New is used to create new instance of Message
-func New(opt MailOptions) *Message {
+func New(opt Options) *Message {
 	return &Message{
 		Options: opt,
 	}
