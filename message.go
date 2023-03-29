@@ -2,22 +2,21 @@ package mail
 
 import (
 	"bytes"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"log"
 	"mime/multipart"
 	"net/mail"
-	"net/smtp"
 	"net/textproto"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 type Attachment struct {
-	Name string
-	Data []byte
+	Name        string
+	Data        []byte
+	ContentType string
 }
 
 type Message struct {
@@ -58,31 +57,16 @@ type BodyMessage struct {
 	Content []byte
 }
 
-func (m *Message) SetFrom(from string) error {
-	if from == "" {
-		return fmt.Errorf("mail: %w", ErrEmptyFrom)
-	}
-
+func (m *Message) SetFrom(from string) {
 	m.from = from
-	return nil
 }
 
-func (m *Message) SetTo(to []string) error {
-	if len(to) == 0 {
-		return fmt.Errorf("mail: %w", ErrEmptyTo)
-	}
-
+func (m *Message) SetTo(to []string) {
 	m.to = to
-	return nil
 }
 
-func (m *Message) SetSubject(subject string) error {
-	if subject == "" {
-		return fmt.Errorf("mail: %w", ErrEmptySubject)
-	}
-
+func (m *Message) SetSubject(subject string) {
 	m.subject = subject
-	return nil
 }
 
 func (m *Message) SetCc(cc []string) {
@@ -93,85 +77,48 @@ func (m *Message) SetBcc(bcc []string) {
 	m.bcc = bcc
 }
 
-func (msg *Message) SetBodyPlainText(content string) error {
-	if content == "" {
-		return fmt.Errorf("message: %w", ErrEmptyBody)
-	}
-
-	message := "Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n"
-
-	_, err := msg.body.WriteString(message + content)
-
-	if err != nil {
-		return err
-	}
-
-	if msg.boundary != "" {
-		_, err := msg.body.WriteString(msg.boundary)
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+func (m *Message) SetBodyPlainText(content []byte) {
+	m.plainText = content
 }
 
-func (msg *Message) SetBodyHTML(content string) error {
-	if content == "" {
-		return fmt.Errorf("message: %w", ErrEmptyBody)
-	}
-
-	_, err := msg.body.WriteString(content)
-
-	if err != nil {
-		return err
-	}
-
-	if msg.boundary != "" {
-		msg.body.WriteString(msg.boundary)
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+func (m *Message) SetBodyHTML(content []byte) {
+	m.html = content
 }
 
 // SetAttachment set attachment to email message
 // param name is either path to file or url
-func (msg *Message) SetAttachment(filename string) error {
+func (m *Message) SetAttachment(filename string) error {
 	if filename == "" {
 		return fmt.Errorf("message: %w", ErrEmptyAttachment)
 	}
 
-	file, err := os.ReadFile(filename)
-
-	if err == nil {
-		return fmt.Errorf("attachment: %s", ErrFileNotFound)
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("message: %w", ErrFileNotFound)
 	}
 
-	msg.contentType = ContentTypeMultipart
+	defer file.Close()
 
-	writer := multipart.NewWriter(&msg.body)
+	contentType := filepath.Ext(filename)
 
-	mime := getMimeType(filename)
-	header := textproto.MIMEHeader{}
-	header.Set("Content-Type", mime+"; name=\""+filename+"\"")
-	header.Set("Content-Transfer-Encoding", "base64")
-	header.Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-	part, err := writer.CreatePart(header)
+	fileInfo, err := file.Stat()
 	if err != nil {
 		return err
 	}
-	msg.boundary = writer.Boundary()
 
-	encoded := make([]byte, base64.StdEncoding.EncodedLen(len(file)))
-	base64.StdEncoding.Encode(encoded, file)
-	part.Write(base64LineBreaker(encoded))
+	fileSize := fileInfo.Size()
+	fileBuffer := make([]byte, fileSize)
 
-	writer.Close()
+	file.Read(fileBuffer)
+
+	attachment := Attachment{
+		Name:        fileInfo.Name(),
+		Data:        fileBuffer,
+		ContentType: contentType,
+	}
+
+	m.attachment = append(m.attachment, attachment)
+
 	return nil
 }
 
@@ -223,62 +170,186 @@ func (msg *Message) SetAttachment(filename string) error {
 // 	return nil
 // }
 
-func (msg *Message) SendMultipart() error {
-	if msg.from == "" {
+// func (m *Message) SendMultipart() error {
+// 	if m.from == "" {
+// 		return fmt.Errorf("message: %w", ErrEmptyFrom)
+// 	}
+
+// 	if len(m.to) == 0 {
+// 		return fmt.Errorf("message: %w", ErrEmptyTo)
+// 	}
+
+// 	if m.subject == "" {
+// 		return fmt.Errorf("message: %w", ErrEmptySubject)
+// 	}
+
+// 	from, err := mail.ParseAddress(m.from)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	for _, to := range m.to {
+// 		_, err := mail.ParseAddress(to)
+// 		if err != nil {
+// 			return err
+// 		}
+// 	}
+
+// 	m.header = "From: " + from.String() + "\r\n" +
+// 		"To: " + strings.Join(m.to, ",") + "\r\n" +
+// 		"Subject: " + m.subject + "\r\n" +
+// 		"Message-ID: " + generateMessageID() + "\r\n" +
+// 		"Date: " + time.Now().Format(time.RFC1123Z) + "\r\n" +
+// 		"MIME-Version: 1.0\r\n"
+
+// 	if len(m.cc) > 0 {
+// 		m.header += "Cc: " + strings.Join(m.cc, ",") + "\r\n"
+// 	}
+
+// 	if len(m.bcc) > 0 {
+// 		m.header += "Bcc: " + strings.Join(m.bcc, ",") + "\r\n"
+// 	}
+
+// 	if len(m.attachment) > 0 {
+// 		m.header += "Content-Type: multipart/mixed; boundary=\"" + m.boundary + "\""
+// 	}
+
+// 	auth, err := m.Options.plainAuth()
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	log.Println(m.body.String())
+
+// 	body := m.header + m.body.String()
+// 	err = smtp.SendMail(m.Options.Host+":"+m.Options.Port, auth, m.from, m.to, []byte(body))
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	return nil
+// }
+
+func (m *Message) Send() (err error) {
+	if m.from == "" {
 		return fmt.Errorf("message: %w", ErrEmptyFrom)
 	}
 
-	if len(msg.to) == 0 {
+	if len(m.to) == 0 {
 		return fmt.Errorf("message: %w", ErrEmptyTo)
 	}
 
-	if msg.subject == "" {
+	if m.subject == "" {
 		return fmt.Errorf("message: %w", ErrEmptySubject)
 	}
 
-	from, err := mail.ParseAddress(msg.from)
+	from, err := mail.ParseAddress(m.from)
 	if err != nil {
 		return err
 	}
 
-	for _, to := range msg.to {
+	for _, to := range m.to {
 		_, err := mail.ParseAddress(to)
 		if err != nil {
 			return err
 		}
 	}
 
-	msg.header = "From: " + from.String() + "\r\n" +
-		"To: " + strings.Join(msg.to, ",") + "\r\n" +
-		"Subject: " + msg.subject + "\r\n" +
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	var headContentType string
+
+	if len(m.plainText) > 0 {
+		part, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Type": {"text/plain; charset=UTF-8"},
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = part.Write(m.plainText)
+		if err != nil {
+			return err
+		}
+
+		headContentType = "text/plain; charset=UTF-8"
+	}
+
+	if len(m.html) > 0 {
+		part, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Type": {"text/html; charset=UTF-8"},
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = part.Write(m.html)
+		if err != nil {
+			return err
+		}
+
+		headContentType = "text/html; charset=UTF-8"
+
+		if len(m.plainText) != 0 {
+			headContentType = "multipart/alternative"
+		}
+	}
+
+	if len(m.attachment) > 0 {
+		for _, attachment := range m.attachment {
+			part, err := writer.CreatePart(textproto.MIMEHeader{
+				"Content-Type":        {attachment.ContentType},
+				"Content-Disposition": {fmt.Sprintf("attachment; filename=\"%s\"", attachment.Name)},
+			})
+			if err != nil {
+				return err
+			}
+
+			_, err = part.Write(attachment.Data)
+			if err != nil {
+				return err
+			}
+		}
+
+		headContentType = "multipart/mixed; boundary=\"" + writer.Boundary() + "\""
+	}
+
+	err = writer.Close()
+	if err != nil {
+		return err
+	}
+
+	m.header = "From: " + from.String() + "\r\n" +
+		"To: " + strings.Join(m.to, ",") + "\r\n" +
+		"Subject: " + m.subject + "\r\n" +
 		"Message-ID: " + generateMessageID() + "\r\n" +
 		"Date: " + time.Now().Format(time.RFC1123Z) + "\r\n" +
-		"MIME-Version: 1.0\r\n"
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: " + headContentType + "\r\n" +
+		"Content-Transfer-Encoding: 8bit\r\n"
 
-	if len(msg.cc) > 0 {
-		msg.header += "Cc: " + strings.Join(msg.cc, ",") + "\r\n"
+	if len(m.cc) > 0 {
+		m.header += "Cc: " + strings.Join(m.cc, ",") + "\r\n"
 	}
 
-	if len(msg.bcc) > 0 {
-		msg.header += "Bcc: " + strings.Join(msg.bcc, ",") + "\r\n"
+	if len(m.bcc) > 0 {
+		m.header += "Bcc: " + strings.Join(m.bcc, ",") + "\r\n"
 	}
 
-	if len(msg.attachment) > 0 {
-		msg.header += "Content-Type: multipart/mixed; boundary=\"" + msg.boundary + "\""
-	}
+	message := m.header + "\r\n" + body.String()
 
-	auth, err := msg.Options.plainAuth()
-	if err != nil {
-		return err
-	}
+	fmt.Println(message)
 
-	log.Println(msg.body.String())
+	// auth, err := m.Options.plainAuth()
+	// if err != nil {
+	// 	return err
+	// }
 
-	body := msg.header + msg.body.String()
-	err = smtp.SendMail(msg.Options.Host+":"+msg.Options.Port, auth, msg.from, msg.to, []byte(body))
-	if err != nil {
-		return err
-	}
+	// err = smtp.SendMail(m.Options.Host+":"+m.Options.Port, auth, m.from, m.to, []byte(message))
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }
