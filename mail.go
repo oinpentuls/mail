@@ -40,6 +40,13 @@ func (m *MailOptions) plainAuth() (smtp.Auth, error) {
 	return auth, nil
 }
 
+// New is used to create new instance of Message
+func New(opt MailOptions) *Message {
+	return &Message{
+		Options: opt,
+	}
+}
+
 // Message-ID in header email is consist of uuid and hostname
 // Example: <uuid@hostname>
 // This header is important for email server to identify email
