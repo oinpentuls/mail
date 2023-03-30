@@ -5,7 +5,7 @@ This package is created for supporting my work, I would be glad if the package c
 
 ## Installation
 ```sh
-go get https://github.com/oinpentuls/mail-go
+go get github.com/oinpentuls/mail-go
 ```
 
 ## Usage
